@@ -1,0 +1,34 @@
+# Node.js dependencies
+frontend/node_modules/
+frontend/dist/
+
+# Python compiled cache & virtual environments
+__pycache__/
+**/__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+venv/
+env/
+.env
+backend/.env
+
+# SQLite database files (dev fallback)
+*.db
+*.sqlite3
+
+# OS cache files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Large model binaries (downloaded dynamically in production)
+*.bin
+*.pt
+*.safetensors
+*.onnx
+
+# IDE
+.vscode/
+.idea/
