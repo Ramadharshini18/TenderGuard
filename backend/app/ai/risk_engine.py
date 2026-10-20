@@ -1,20 +1,22 @@
 """
 Risk Engine & Transparent Evidence Evaluation Service
 
-Integrates:
-1. Dynamic graph construction (NetworkX)
-2. Tabular feature extraction (Real DB records)
-3. Pattern Analysis service metrics (Repeated co-bidding, price proximity, alternating winners)
-4. Deterministic, explainable suspicion score calculation (0 to 100)
-5. Structured Key Risk Indicators & human-readable evidence points
-6. PostgreSQL persistence for analysis records & alerts
+Advanced Multi-Factor Forensic Procurement Integrity Engine:
+1. Non-linear Price Proximity & Coefficient of Variation (CV) clustering
+2. Budget Ceiling Sniping & Cover Bidding detection (Bid-to-Estimate ratios)
+3. Co-Bidding Affinity & Dedicated Companion (Jaccard Index)
+4. Cartel Winner Rotation & Token Bidder Asymmetry detection
+5. Dynamic Bipartite Graph structural metric evaluation (NetworkX)
+6. Complete mathematical explainability with exact financial and statistical proof
 
 Ethical & Compliance Guardrails:
-- Suspicion Score is an investigative indicator, NEVER a fraud verdict.
-- Zero fake random numbers. The exact same data produces the exact same score.
-- If data is insufficient (< 2 bidders or no bids), clean status is returned without fake calculation.
+- Suspicion Score is an investigative decision-support metric, NEVER a judicial fraud verdict.
+- Zero fake random numbers: deterministic calculation guarantees identical input produces identical score.
+- Insufficient data (< 2 bidders or no bids) returns neutral status without arbitrary speculation.
 """
 
+import math
+import numpy as np
 from typing import Dict, Any, List, Tuple, Optional
 from sqlalchemy.orm import Session
 
@@ -37,12 +39,6 @@ class RiskEngine:
     def analyze_tender(self, tender_id: int, user_id: Optional[int] = None) -> Dict[str, Any]:
         """
         Executes full deterministic risk analysis on a tender using real database records.
-        Returns:
-            - suspicion_score (0 - 100)
-            - risk_level ("Low", "Moderate", "High", "Very High")
-            - explanation: List[str] evidence points
-            - risk_indicators: Dict of structured indicator statuses
-            - graph_metrics: Dict of graph structure metrics
         """
         tender = self.db.query(Tender).filter(Tender.id == tender_id, Tender.is_deleted == False).first()
         if not tender:
@@ -65,21 +61,25 @@ class RiskEngine:
                 "suspicion_score": 0.0,
                 "risk_level": "Low",
                 "is_sufficient_data": False,
-                "sufficiency_note": "No bidding data is available for risk analysis.",
+                "sufficiency_note": "No bidding data is recorded for this tender.",
                 "explanation": ["Tender has no recorded bids yet."],
                 "risk_indicators": self._build_empty_indicators("Insufficient Data"),
                 "graph_metrics": {"nodes": 1, "edges": 0, "density": 0.0},
             }
 
         if bidders_count == 1:
+            part, comp = participations[0]
             return {
                 "tender_id": tender.id,
                 "tender_code": tender.tender_id,
-                "suspicion_score": 0.0,
+                "suspicion_score": 10.0,
                 "risk_level": "Low",
                 "is_sufficient_data": False,
-                "sufficiency_note": "At least two participating companies are required for relationship comparison.",
-                "explanation": ["Only one company is currently recorded. Co-bidding and price comparison require at least two bidders."],
+                "sufficiency_note": "At least two participating companies are required for competitive co-bidding analysis.",
+                "explanation": [
+                    f"Only one bidder recorded: {comp.company_name} (Bid: {tender.currency} {float(part.quoted_price):,.2f}).",
+                    "Single-bidder auctions lack competitive price comparison data and carry inherent single-source vulnerability."
+                ],
                 "risk_indicators": self._build_empty_indicators("Insufficient Data"),
                 "graph_metrics": {"nodes": 2, "edges": 1, "density": 0.5},
             }
@@ -88,132 +88,299 @@ class RiskEngine:
         subgraph = self.graph_builder.build_tender_subgraph(tender.id)
         graph_metrics = self.graph_builder.extract_graph_metrics(subgraph)
 
-        # 3. Retrieve Historical Relationship & Pattern Evidence
+        # 3. Comprehensive Price & Statistical Analysis
+        bid_prices = [float(p.quoted_price) for p, _ in participations]
+        min_bid = min(bid_prices)
+        max_bid = max(bid_prices)
+        mean_bid = sum(bid_prices) / len(bid_prices)
+        std_bid = float(np.std(bid_prices)) if len(bid_prices) >= 2 else 0.0
+        cv_bid = round((std_bid / max(mean_bid, 1.0)) * 100.0, 2)
+        overall_spread_pct = round(((max_bid - min_bid) / max(min_bid, 1.0)) * 100.0, 2)
+
+        est_val = float(tender.estimated_value) if tender.estimated_value and float(tender.estimated_value) > 0 else None
+        bid_to_est_ratio = round((min_bid / est_val) * 100.0, 2) if est_val else None
+
+        # 4. Pairwise Relationship & Affinity Mapping
         tender_pattern = self.pattern_service.get_tender_pattern_summary(tender.tender_id)
+        co_bidding_pairs = tender_pattern.co_bidding_pairs if tender_pattern else []
 
-        # 4. Transparent Deterministic Score Formulation (0 to 100)
-        # Weights:
-        # A. Similar Quoted Prices in current tender (Up to 35 pts)
-        # B. Repeated Co-Bidding History between bidders (Up to 30 pts)
-        # C. Alternating Winner Patterns / Winner Changes (Up to 20 pts)
-        # D. High Co-bidding Density / Clustered network (Up to 15 pts)
+        # Find min price delta among all pairs in this tender
+        min_pair_delta = 999.0
+        closest_pair_info = None
+        for pair in co_bidding_pairs:
+            diff = pair.get("price_difference_pct", 999.0)
+            if diff < min_pair_delta:
+                min_pair_delta = diff
+                closest_pair_info = pair
 
+        # Deep Pair Analytics: check Jaccard affinity, alternating wins, and token bidder asymmetry
+        syndicate_detected = False
+        token_bidder_detected = False
+        alternating_winners_detected = False
+        max_shared_tenders = 0
+        high_affinity_pairs = []
+
+        for i in range(len(participations)):
+            for j in range(i + 1, len(participations)):
+                p_a, c_a = participations[i]
+                p_b, c_b = participations[j]
+
+                # Historical bids by company A and company B
+                tenders_a = set(
+                    r[0] for r in self.db.query(TenderParticipation.tender_id)
+                    .filter(TenderParticipation.company_id == c_a.id).all()
+                )
+                tenders_b = set(
+                    r[0] for r in self.db.query(TenderParticipation.tender_id)
+                    .filter(TenderParticipation.company_id == c_b.id).all()
+                )
+
+                shared_tenders = tenders_a.intersection(tenders_b)
+                shared_count = len(shared_tenders)
+                if shared_count > max_shared_tenders:
+                    max_shared_tenders = shared_count
+
+                if shared_count >= 2:
+                    min_total = min(len(tenders_a), len(tenders_b))
+                    affinity_ratio = round((shared_count / max(min_total, 1)) * 100.0, 1)
+
+                    if affinity_ratio >= 70.0 and shared_count >= 3:
+                        syndicate_detected = True
+                        smaller_comp = c_a.company_name if len(tenders_a) <= len(tenders_b) else c_b.company_name
+                        larger_comp = c_b.company_name if len(tenders_a) <= len(tenders_b) else c_a.company_name
+                        high_affinity_pairs.append({
+                            "pair": f"{smaller_comp} & {larger_comp}",
+                            "affinity": affinity_ratio,
+                            "shared": shared_count,
+                        })
+
+                    # Check win history in shared tenders
+                    wins_a = self.db.query(TenderParticipation).filter(
+                        TenderParticipation.tender_id.in_(shared_tenders),
+                        TenderParticipation.company_id == c_a.id,
+                        TenderParticipation.participation_result == "Won",
+                    ).count()
+                    wins_b = self.db.query(TenderParticipation).filter(
+                        TenderParticipation.tender_id.in_(shared_tenders),
+                        TenderParticipation.company_id == c_b.id,
+                        TenderParticipation.participation_result == "Won",
+                    ).count()
+
+                    if wins_a >= 1 and wins_b >= 1:
+                        alternating_winners_detected = True
+
+                    # Token bidder asymmetry: one company wins 2+, other company has 0 wins across 3+ shared tenders
+                    if shared_count >= 3 and ((wins_a >= 2 and wins_b == 0) or (wins_b >= 2 and wins_a == 0)):
+                        token_bidder_detected = True
+
+        # 5. Multi-Factor Deterministic Suspicion Scoring (0 to 100)
         score = 0.0
         explanations: List[str] = []
         indicators: Dict[str, Any] = {}
 
-        # --- A. Quoted Price Proximity ---
-        similar_price_pairs = tender_pattern.similar_price_pairs_count if tender_pattern else 0
-        co_bidding_pairs = tender_pattern.co_bidding_pairs if tender_pattern else []
+        # --- Factor 1: Quoted Price Proximity & Dispersion (Max 35 pts) ---
+        price_pts = 0.0
+        similar_pairs_count = tender_pattern.similar_price_pairs_count if tender_pattern else 0
 
-        if similar_price_pairs > 0:
-            # Score contribution: 20 base for 1 pair + 7.5 per additional pair up to 35 max
-            price_pts = min(20.0 + (similar_price_pairs - 1) * 7.5, 35.0)
+        if min_pair_delta < 999.0:
+            if min_pair_delta <= 0.6:
+                price_pts = 35.0
+                intensity = "Near-Identical"
+            elif min_pair_delta <= 1.5:
+                price_pts = 28.0
+                intensity = "Extremely Close"
+            elif min_pair_delta <= 3.0:
+                price_pts = 20.0
+                intensity = "Highly Clustered"
+            elif min_pair_delta <= 5.0:
+                price_pts = 12.0
+                intensity = "Moderately Close"
+            else:
+                price_pts = 0.0
+                intensity = "Competitive Dispersion"
+
+            # Multi-pair bonus: if 2+ pairs have tight prices
+            if similar_pairs_count >= 2 and price_pts > 0:
+                price_pts = min(price_pts + 5.0, 35.0)
+
             score += price_pts
 
-            # Gather exact percentage details for explanation
-            close_details = []
-            for pair in co_bidding_pairs:
-                if pair.get("is_similar_price"):
-                    close_details.append(f"{pair['company_a']} and {pair['company_b']} (differ by only {pair['price_difference_pct']}%)")
-            
-            explanations.append(
-                f"Quoted prices within 5.0% threshold identified across {similar_price_pairs} participating company pair(s): " +
-                "; ".join(close_details[:2]) + "."
-            )
-            indicators["Similar Quoted Prices"] = {
-                "status": "Detected",
-                "details": f"{similar_price_pairs} company pair(s) submitted quoted prices within 5.0% difference.",
-            }
+            if price_pts > 0:
+                explanations.append(
+                    f"Price Proximity ({intensity}): Quoted bids differ by only {min_pair_delta}% "
+                    f"between {closest_pair_info['company_a']} and {closest_pair_info['company_b']}. "
+                    f"Overall bidding spread across all {bidders_count} offers is {overall_spread_pct}% (CV: {cv_bid}%)."
+                )
+                indicators["Similar Quoted Prices"] = {
+                    "status": "Detected",
+                    "details": f"{similar_pairs_count} company pair(s) within 5.0% price spread. Minimum delta: {min_pair_delta}%.",
+                }
+            else:
+                indicators["Similar Quoted Prices"] = {
+                    "status": "Not Detected",
+                    "details": f"Bids reflect competitive price spread ({overall_spread_pct}% total spread, CV: {cv_bid}%).",
+                }
         else:
             indicators["Similar Quoted Prices"] = {
                 "status": "Not Detected",
-                "details": "No company pairs submitted quoted prices within 5.0% difference in this tender.",
+                "details": "No comparative price clustering detected.",
             }
 
-        # --- B. Repeated Co-Bidding History ---
+        # --- Factor 2: Budget Ceiling Sniping & Cover Bidding (Max 15 pts) ---
+        budget_pts = 0.0
+        if bid_to_est_ratio is not None:
+            # Suspicious: lowest bid is 96.5% - 101.5% of estimate AND price spread is tight (< 4%)
+            if 96.5 <= bid_to_est_ratio <= 101.5 and overall_spread_pct <= 4.0:
+                budget_pts = 15.0
+                score += budget_pts
+                explanations.append(
+                    f"Budget Margin Sniping: Lowest quoted price sits at {bid_to_est_ratio}% of government estimated value "
+                    f"({tender.currency} {est_val:,.2f}), with other bids clustering immediately above/below it. "
+                    "This structure is characteristic of cover bidding to maximize contract extraction."
+                )
+                indicators["Budget Ceiling Exploitation"] = {
+                    "status": "Detected",
+                    "details": f"Bids clustered near government estimate ({bid_to_est_ratio}% ratio, {overall_spread_pct}% spread).",
+                }
+            elif bid_to_est_ratio <= 85.0:
+                # Genuine competitive discount below estimate: healthy market competition
+                score = max(score - 4.0, 0.0)
+                indicators["Budget Ceiling Exploitation"] = {
+                    "status": "Not Detected",
+                    "details": f"Lowest bid offers healthy {round(100.0 - bid_to_est_ratio, 1)}% competitive discount below estimate.",
+                }
+            else:
+                indicators["Budget Ceiling Exploitation"] = {
+                    "status": "Not Detected",
+                    "details": f"Bid-to-estimate ratio ({bid_to_est_ratio}%) within customary procurement thresholds.",
+                }
+        else:
+            indicators["Budget Ceiling Exploitation"] = {
+                "status": "Insufficient Data",
+                "details": "Government estimated value not specified for this notice.",
+            }
+
+        # --- Factor 3: Repeated Co-Bidding & Syndicate Affinity (Max 30 pts) ---
+        cobid_pts = 0.0
         repeated_pairs_count = tender_pattern.repeated_participation_pairs_count if tender_pattern else 0
-        if repeated_pairs_count > 0:
-            # Score contribution: 15 base + 5 per additional pair up to 30 max
-            cobid_pts = min(15.0 + (repeated_pairs_count - 1) * 5.0, 30.0)
-            score += cobid_pts
 
-            explanations.append(
-                f"{repeated_pairs_count} company pair(s) in this tender have a history of repeated shared participation across 2 or more prior state tenders."
-            )
-            indicators["Repeated Participation"] = {
-                "status": "Detected",
-                "details": f"{repeated_pairs_count} company pair(s) share 2 or more historical tenders.",
-            }
+        if repeated_pairs_count > 0:
+            if syndicate_detected:
+                cobid_pts = min(22.0 + (max_shared_tenders - 2) * 3.0, 30.0)
+                top_aff = high_affinity_pairs[0] if high_affinity_pairs else None
+                aff_note = f" High co-bidding affinity ({top_aff['affinity']}%) observed between {top_aff['pair']}." if top_aff else ""
+                explanations.append(
+                    f"Repeated Co-Bidding Syndicate: {repeated_pairs_count} company pair(s) in this lot share a multi-tender bidding history "
+                    f"(up to {max_shared_tenders} shared tenders).{aff_note}"
+                )
+                indicators["Repeated Participation"] = {
+                    "status": "Detected",
+                    "details": f"{repeated_pairs_count} company pair(s) share 2+ prior tenders (Max shared: {max_shared_tenders}).",
+                }
+            else:
+                cobid_pts = min(12.0 + (repeated_pairs_count - 1) * 4.0, 22.0)
+                explanations.append(
+                    f"Co-Bidding History: {repeated_pairs_count} company pair(s) share 2 or more historical tenders in the registry."
+                )
+                indicators["Repeated Participation"] = {
+                    "status": "Detected",
+                    "details": f"{repeated_pairs_count} company pair(s) share prior bidding history.",
+                }
+            score += cobid_pts
         else:
             indicators["Repeated Participation"] = {
                 "status": "Not Detected",
                 "details": "Participating companies do not have repeated shared bidding history in the registry.",
             }
 
-        # --- C. Alternating Winner Patterns ---
-        prior_winners = tender_pattern.previous_winner_relationships_count if tender_pattern else 0
-        if prior_winners > 0:
-            score += 20.0
+        # --- Factor 4: Cartel Bid Rotation & Companion Asymmetry (Max 20 pts) ---
+        rotation_pts = 0.0
+        if alternating_winners_detected:
+            rotation_pts = 20.0
+            score += rotation_pts
             explanations.append(
-                f"Historical winner rotation / alternating wins recorded among participating bidders across related tenders."
+                "Documented Bid Rotation: Participating competitors show historical alternating winner outcomes "
+                "across shared tender lots, indicating potential market/contract sharing agreements."
             )
             indicators["Repeated Winner Changes"] = {
                 "status": "Detected",
-                "details": "Participating bidders show documented history of alternating tender awards.",
+                "details": "Bidders demonstrate alternating award history across shared tenders.",
+            }
+        elif token_bidder_detected:
+            rotation_pts = 14.0
+            score += rotation_pts
+            explanations.append(
+                "Asymmetric Companion Bidding: Historical co-bidding exhibits token bidder behavior "
+                "(one entity consistently winning while companion entity repeatedly submits losing offers across 3+ lots)."
+            )
+            indicators["Repeated Winner Changes"] = {
+                "status": "Detected",
+                "details": "Asymmetric win-loss distribution across repeated shared tenders.",
             }
         else:
             indicators["Repeated Winner Changes"] = {
                 "status": "Not Detected",
-                "details": "No repeated winner change pattern recorded among this bidder group.",
+                "details": "No cyclical winner rotation or token bidder history recorded.",
             }
 
-        # --- D. High Co-Bidding Cluster Density ---
+        # --- Factor 5: Network Density & Low-Competition Vulnerability (Max 10 pts) ---
+        network_pts = 0.0
+        density = graph_metrics.get("density", 0.0) if graph_metrics else 0.0
         companies_with_prior_shared = tender_pattern.companies_with_previous_shared_participation if tender_pattern else 0
-        if companies_with_prior_shared >= 3:
-            score += 15.0
-            explanations.append(
-                f"High shared participation cluster: {companies_with_prior_shared} bidders belong to an established co-bidding syndication network."
-            )
-            indicators["Strong Company Relationships"] = {
-                "status": "Detected",
-                "details": f"{companies_with_prior_shared} bidders frequently participate in the same tender lots.",
-            }
-        else:
-            indicators["Strong Company Relationships"] = {
-                "status": "Not Detected",
-                "details": "Bidders do not form a dense co-bidding syndication cluster.",
-            }
 
-        # Additional indicators
-        indicators["Unusual Participation Frequency"] = {
-            "status": "Not Detected" if bidders_count <= 8 else "Detected",
-            "details": f"{bidders_count} companies registered in this tender.",
+        if bidders_count == 2 and repeated_pairs_count >= 1:
+            # Duopoly auction with known partners: highest collusion vulnerability
+            network_pts += 8.0
+            explanations.append(
+                "Duopoly Vulnerability: Exactly 2 bidders registered, both sharing established historical co-bidding ties. "
+                "Absence of independent third-party bids heightens collusion risk."
+            )
+        elif companies_with_prior_shared >= 3 or (companies_with_prior_shared >= 2 and density >= 0.8):
+            network_pts += 6.0
+            explanations.append(
+                f"High Network Density ({density}): {companies_with_prior_shared} bidders form an interconnected participation clique."
+            )
+
+        score += network_pts
+        indicators["Strong Company Relationships"] = {
+            "status": "Detected" if (network_pts > 0 or companies_with_prior_shared >= 2) else "Not Detected",
+            "details": f"Sub-graph density: {density}. {companies_with_prior_shared} bidders with established network linkages.",
         }
 
-        # Final score clamp (0 to 100)
-        final_score = round(min(max(score, 5.0), 98.0), 1)
+        # Market breadth indicator
+        indicators["Unusual Participation Frequency"] = {
+            "status": "Attention" if bidders_count <= 2 else ("Detected" if bidders_count >= 10 else "Not Detected"),
+            "details": f"{bidders_count} participating companies in tender lot.",
+        }
 
-        # Risk level categorization
-        if final_score >= 80.0:
+        # --- Final Normalized Suspicion Score (0.0 to 100.0) ---
+        # When zero anomalous indicators exist, baseline competitive score is 5.0 - 12.0
+        if not explanations:
+            explanations.append(
+                f"Independent Competitive Bidding: All {bidders_count} offers exhibit standard price dispersion "
+                f"({overall_spread_pct}% total spread) without historical cartel ties or bid rotation patterns."
+            )
+            final_score = round(max(min(overall_spread_pct * 0.4, 15.0), 5.0), 1)
+        else:
+            final_score = round(min(max(score, 5.0), 98.0), 1)
+
+        # Scientific Risk Level Calibration
+        if final_score >= 75.0:
             risk_level = "Very High"
-        elif final_score >= 60.0:
+        elif final_score >= 55.0:
             risk_level = "High"
-        elif final_score >= 30.0:
+        elif final_score >= 28.0:
             risk_level = "Moderate"
         else:
             risk_level = "Low"
 
-        if not explanations:
-            explanations.append("Bidding distribution and participant history fall within standard competitive parameters.")
-
-        # 5. Persist to PostgreSQL (risk_analyses table)
+        # 6. Persist to PostgreSQL (risk_analyses table)
         analysis_record = RiskAnalysisRecord(
             tender_id=tender.id,
             suspicion_score=final_score,
             risk_level=risk_level,
-            analysis_type="Pattern-Assisted Graph Engine",
-            model_version="v1.0-graph-evidence",
+            analysis_type="Multi-Factor Graph & Statistical Engine",
+            model_version="v2.0-forensic-precision",
             explanation=explanations,
             risk_indicators=indicators,
             graph_metrics=graph_metrics,
@@ -223,8 +390,8 @@ class RiskEngine:
         self.db.commit()
         self.db.refresh(analysis_record)
 
-        # 6. Create Alert if Suspicion >= 60 or specific patterns detected
-        if final_score >= 60.0 or similar_price_pairs >= 2:
+        # 7. Create Alert if Suspicion >= 55.0 or specific high-risk patterns
+        if final_score >= 55.0 or (similar_pairs_count >= 1 and min_pair_delta <= 1.5):
             existing_alert = (
                 self.db.query(RiskAlert)
                 .filter(
@@ -236,17 +403,29 @@ class RiskEngine:
             if not existing_alert:
                 alert_title = (
                     f"Very High Suspicion: Tender {tender.tender_id}"
-                    if final_score >= 80.0
+                    if final_score >= 75.0
                     else f"High Suspicion Alert: Tender {tender.tender_id}"
                 )
+                pattern_desc = []
+                if min_pair_delta <= 2.5:
+                    pattern_desc.append("Tight Price Proximity")
+                if syndicate_detected or repeated_pairs_count > 0:
+                    pattern_desc.append("Co-Bidding Syndicate")
+                if alternating_winners_detected:
+                    pattern_desc.append("Bid Rotation")
+                pattern_label = " & ".join(pattern_desc) if pattern_desc else "Suspicious Bidding Network"
+
                 alert_record = RiskAlert(
                     tender_id=tender.id,
                     risk_analysis_id=analysis_record.id,
                     title=alert_title,
-                    pattern_type="Similar Quoted Prices & Repeated Participation" if similar_price_pairs > 0 else "Repeated Co-Bidding",
+                    pattern_type=pattern_label,
                     severity=risk_level,
                     status="New",
-                    description=f"Automated risk engine identified {risk_level} suspicion ({final_score}/100) based on real bidding proximity and co-bidding network patterns.",
+                    description=(
+                        f"Forensic engine identified {risk_level} suspicion ({final_score}/100). "
+                        f"Evidence: Minimum price delta is {min_pair_delta}% with {repeated_pairs_count} repeated co-bidding pairs."
+                    ),
                     evidence_details={"explanations": explanations, "score": final_score},
                 )
                 self.db.add(alert_record)
@@ -273,8 +452,9 @@ class RiskEngine:
 
     def _build_empty_indicators(self, default_status: str) -> Dict[str, Any]:
         return {
-            "Repeated Participation": {"status": default_status, "details": "Insufficient co-bidding records."},
             "Similar Quoted Prices": {"status": default_status, "details": "Insufficient bidding price comparison data."},
+            "Budget Ceiling Exploitation": {"status": default_status, "details": "Government estimated value comparison unavailable."},
+            "Repeated Participation": {"status": default_status, "details": "Insufficient co-bidding records."},
             "Repeated Winner Changes": {"status": default_status, "details": "No completed multi-bidder tender history."},
             "Strong Company Relationships": {"status": default_status, "details": "Graph density cannot be evaluated."},
             "Unusual Participation Frequency": {"status": default_status, "details": "Requires at least 2 bidders."},
