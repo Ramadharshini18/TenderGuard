@@ -349,7 +349,14 @@ export default function Companies() {
                       </button>
                     </td>
                     <td className="px-4 py-3.5 font-medium text-brand-charcoal max-w-xs truncate">
-                      {company.company_name}
+                      <button
+                        type="button"
+                        onClick={() => handleOpenDetail(company)}
+                        className="hover:underline hover:text-brand-primary text-left font-medium transition-colors"
+                        title="Click to view company profile & participation history"
+                      >
+                        {company.company_name}
+                      </button>
                     </td>
                     <td className="px-4 py-3.5 font-mono text-xs text-brand-muted whitespace-nowrap">
                       {company.registration_number || '—'}
