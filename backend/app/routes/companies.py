@@ -341,6 +341,8 @@ def get_company_participation_history(
     history_items = []
     won_count = 0
     lost_count = 0
+    disqualified_count = 0
+    pending_count = 0
 
     for p in participations:
         t = p.tender
@@ -348,6 +350,10 @@ def get_company_participation_history(
             won_count += 1
         elif p.participation_result == "Lost":
             lost_count += 1
+        elif p.participation_result == "Disqualified" or p.qualification_status == "Not Qualified":
+            disqualified_count += 1
+        elif p.participation_result == "Pending":
+            pending_count += 1
 
         history_items.append(
             CompanyHistoryItemResponse(
@@ -391,8 +397,11 @@ def get_company_participation_history(
         data=CompanyHistoryResponse(
             company=company_resp,
             history=history_items,
+            participations=history_items,
             total_participations=len(history_items),
             total_won=won_count,
             total_lost=lost_count,
+            total_disqualified=disqualified_count,
+            total_pending=pending_count,
         )
     )

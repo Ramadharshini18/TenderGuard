@@ -94,6 +94,9 @@ class CompanyHistoryItemResponse(BaseModel):
 class CompanyHistoryResponse(BaseModel):
     company: CompanyResponse
     history: List[CompanyHistoryItemResponse]
+    participations: Optional[List[CompanyHistoryItemResponse]] = None
     total_participations: int
     total_won: int
     total_lost: int
+    total_disqualified: int = 0
+    total_pending: int = 0

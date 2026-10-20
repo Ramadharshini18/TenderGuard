@@ -145,8 +145,17 @@ export default function Companies() {
     setHistoryData(null);
     try {
       const res = await fetchCompanyParticipationHistory(company.id, token);
-      if (res.success) {
-        setHistoryData(res.data);
+      if (res.success && res.data) {
+        const items = res.data.participations || res.data.history || [];
+        setHistoryData({
+          ...res.data,
+          participations: items,
+          total_participations: res.data.total_participations ?? items.length,
+          total_won: res.data.total_won ?? items.filter((p) => p.participation_result === 'Won').length,
+          total_lost: res.data.total_lost ?? items.filter((p) => p.participation_result === 'Lost').length,
+          total_disqualified: res.data.total_disqualified ?? items.filter((p) => p.participation_result === 'Disqualified' || p.qualification_status === 'Not Qualified').length,
+          total_pending: res.data.total_pending ?? items.filter((p) => p.participation_result === 'Pending' || p.qualification_status === 'Pending Review').length,
+        });
       } else {
         setHistoryData({
           participations: [],
@@ -158,7 +167,15 @@ export default function Companies() {
         });
       }
     } catch (err) {
-      console.error(err);
+      console.error('Error loading company history:', err);
+      setHistoryData({
+        participations: [],
+        total_participations: 0,
+        total_won: 0,
+        total_lost: 0,
+        total_disqualified: 0,
+        total_pending: 0,
+      });
     } finally {
       setIsLoadingHistory(false);
     }
@@ -631,7 +648,7 @@ export default function Companies() {
                 <div className="py-6 text-center">
                   <LoadingState message="Loading historical participation data..." />
                 </div>
-              ) : !historyData || historyData.participations.length === 0 ? (
+              ) : !historyData || !historyData.participations || historyData.participations.length === 0 ? (
                 <div className="p-6 text-center rounded-lg border border-dashed border-brand-border bg-brand-bg/40">
                   <p className="text-xs text-brand-muted">
                     This company has not participated in any tenders yet.
@@ -651,10 +668,10 @@ export default function Companies() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-brand-border/40 bg-white">
-                      {historyData.participations.map((part) => (
-                        <tr key={part.id} className="hover:bg-brand-bg/40">
+                      {historyData.participations.map((part, pIdx) => (
+                        <tr key={part.participation_id || part.id || pIdx} className="hover:bg-brand-bg/40">
                           <td className="px-3 py-2.5 font-mono font-bold text-brand-primary whitespace-nowrap">
-                            {part.tender_code || `TND-${part.tender_id}`}
+                            {part.tender_id_code || part.tender_code || (part.tender_numeric_id ? `TND-${part.tender_numeric_id}` : '—')}
                           </td>
                           <td className="px-3 py-2.5 max-w-xs truncate text-brand-charcoal font-medium">
                             {part.tender_title || 'Procurement Tender'}
